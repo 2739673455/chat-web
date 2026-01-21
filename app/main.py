@@ -1,121 +1,35 @@
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+import os
+from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.config import CFG
-from app.exceptions.auth import (
-    EmailAlreadyExistsError,
-    ExpiredTokenError,
-    InsufficientPermissionsError,
-    InvalidAccessTokenError,
-    InvalidCredentialsError,
-    InvalidRefreshTokenError,
-    UserDisabledError,
-    UserEmailSameError,
-    UserNameSameError,
-    UserNotFoundError,
-    UserPasswordSameError,
+from app.dependencies.database import db_manager
+from app.handlers import register_exception_handlers
+from app.routers.api import api
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await db_manager.close_all()
+
+
+app = FastAPI(lifespan=lifespan)
+
+# CORS 中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CFG.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-from app.routers import chat, config, conversations, user
 
-app = FastAPI()
-
-
-@app.exception_handler(InvalidCredentialsError)
-async def invalid_credentials_handler(request: Request, exc: InvalidCredentialsError):
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(UserNotFoundError)
-async def user_not_found_handler(request: Request, exc: UserNotFoundError):
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(UserDisabledError)
-async def user_disabled_handler(request: Request, exc: UserDisabledError):
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(ExpiredTokenError)
-async def expired_token_handler(request: Request, exc: ExpiredTokenError):
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(InvalidAccessTokenError)
-async def invalid_access_token_handler(request: Request, exc: InvalidAccessTokenError):
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(InvalidRefreshTokenError)
-async def invalid_refresh_token_handler(
-    request: Request, exc: InvalidRefreshTokenError
-):
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(InsufficientPermissionsError)
-async def insufficient_permissions_handler(
-    request: Request, exc: InsufficientPermissionsError
-):
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(EmailAlreadyExistsError)
-async def email_already_exists_handler(request: Request, exc: EmailAlreadyExistsError):
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(UserEmailSameError)
-async def user_email_same_handler(request: Request, exc: UserEmailSameError):
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(UserNameSameError)
-async def user_name_same_handler(request: Request, exc: UserNameSameError):
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(UserPasswordSameError)
-async def user_password_same_handler(request: Request, exc: UserPasswordSameError):
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"detail": str(exc)},
-    )
-
-
-app.include_router(user.router)
-app.include_router(config.router)
-app.include_router(conversations.router)
-app.include_router(chat.router)
+# 异常处理
+register_exception_handlers(app)
 
 
 @app.get("/health")
@@ -123,7 +37,13 @@ async def health():
     return {"status": "healthy"}
 
 
-if __name__ == "__main__":
-    import uvicorn
+app.include_router(api.router)
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=CFG.port)
+if __name__ == "__main__":
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=CFG.port,
+        reload=True,
+        reload_dirs=[os.path.dirname(__file__)],
+    )

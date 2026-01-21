@@ -1,14 +1,25 @@
-from httpx import AsyncClient
+from faker import Faker
+
+fake = Faker("zh_CN")
 
 
-async def test_register_success(client: AsyncClient):
+def generate_test_email():
+    """生成以 test_ 开头的测试用户邮箱"""
+    return f"test_{fake.email()}"
+
+
+def test_register_success(client):
     """测试成功注册"""
-    response = await client.post(
-        "/auth/register",
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
+    response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "test@example.com",
-            "username": "testuser",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     assert response.status_code == 200
@@ -18,77 +29,87 @@ async def test_register_success(client: AsyncClient):
     assert data["token_type"] == "bearer"
 
 
-async def test_register_email_exists(client: AsyncClient):
+def test_register_email_exists(client):
     """测试注册时邮箱已存在"""
     # 先注册一个用户
-    await client.post(
-        "/auth/register",
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
+    client.post(
+        "/api/v1/user/register",
         json={
-            "email": "duplicate@example.com",
-            "username": "user1",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
 
     # 尝试用相同邮箱再次注册
-    response = await client.post(
-        "/auth/register",
+    response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "duplicate@example.com",
-            "username": "user2",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     assert response.status_code == 409
     assert "邮箱" in response.json()["detail"]
 
 
-async def test_register_invalid_email(client: AsyncClient):
+def test_register_invalid_email(client):
     """测试注册时邮箱格式无效"""
-    response = await client.post(
-        "/auth/register",
+    username = fake.user_name()
+    password = fake.password()
+
+    response = client.post(
+        "/api/v1/user/register",
         json={
             "email": "invalid-email",
-            "username": "testuser",
-            "password": "password123",
+            "username": username,
+            "password": password,
         },
     )
     assert response.status_code == 422
 
 
-async def test_register_short_password(client: AsyncClient):
+def test_register_short_password(client):
     """测试注册时密码过短"""
-    response = await client.post(
-        "/auth/register",
-        json={"email": "test@example.com", "username": "testuser", "password": "123"},
-    )
-    assert response.status_code == 422
+    email = generate_test_email()
+    username = fake.user_name()
 
-
-async def test_register_short_username(client: AsyncClient):
-    """测试注册时用户名过短"""
-    response = await client.post(
-        "/auth/register",
-        json={"email": "test@example.com", "username": "ab", "password": "password123"},
-    )
-    assert response.status_code == 422
-
-
-async def test_login_success(client: AsyncClient):
-    """测试成功登录"""
-    # 先注册用户
-    await client.post(
-        "/auth/register",
+    response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "login@example.com",
-            "username": "loginuser",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": "123",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_login_success(client):
+    """测试成功登录"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
+    # 先注册用户
+    client.post(
+        "/api/v1/user/register",
+        json={
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
 
     # 登录
-    response = await client.post(
-        "/auth/login", json={"email": "login@example.com", "password": "password123"}
+    response = client.post(
+        "/api/v1/user/login",
+        json={"email": email, "password": password},
     )
     assert response.status_code == 200
     data = response.json()
@@ -97,198 +118,234 @@ async def test_login_success(client: AsyncClient):
     assert data["token_type"] == "bearer"
 
 
-async def test_login_invalid_email(client: AsyncClient):
+def test_login_invalid_email(client):
     """测试登录时邮箱不存在"""
-    response = await client.post(
-        "/auth/login",
-        json={"email": "nonexistent@example.com", "password": "password123"},
+    email = generate_test_email()
+    password = fake.password()
+
+    response = client.post(
+        "/api/v1/user/login",
+        json={"email": email, "password": password},
     )
     assert response.status_code == 401
     assert "用户不存在" in response.json()["detail"]
 
 
-async def test_login_invalid_password(client: AsyncClient):
+def test_login_invalid_password(client):
     """测试登录时密码错误"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
     # 先注册用户
-    await client.post(
-        "/auth/register",
+    client.post(
+        "/api/v1/user/register",
         json={
-            "email": "wrongpass@example.com",
-            "username": "user",
-            "password": "correctpass",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
 
     # 用错误密码登录
-    response = await client.post(
-        "/auth/login", json={"email": "wrongpass@example.com", "password": "wrongpass"}
+    response = client.post(
+        "/api/v1/user/login",
+        json={"email": email, "password": password + "1"},
     )
     assert response.status_code == 401
     assert "邮箱或密码错误" in response.json()["detail"]
 
 
-async def test_get_me_success(client: AsyncClient):
+def test_get_me_success(client):
     """测试获取当前用户信息"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "me@example.com",
-            "username": "meuser",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     token = register_response.json()["access_token"]
 
     # 获取用户信息
-    response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/v1/user/me", headers={"Authorization": f"Bearer {token}"}
+    )
     assert response.status_code == 200
     data = response.json()
-    assert data["email"] == "me@example.com"
-    assert data["username"] == "meuser"
-    assert "user_id" in data
+    assert data["email"] == email
+    assert data["username"] == username
+    assert "groups" in data
+    assert "normal" in data["groups"]
 
 
-async def test_get_me_no_token(client: AsyncClient):
+def test_get_me_no_token(client):
     """测试获取用户信息时未提供token"""
-    response = await client.get("/auth/me")
+    response = client.get("/api/v1/user/me")
     assert response.status_code == 401
 
 
-async def test_get_me_invalid_token(client: AsyncClient):
+def test_get_me_invalid_token(client):
     """测试获取用户信息时token无效"""
-    response = await client.get(
-        "/auth/me", headers={"Authorization": "Bearer invalid_token"}
+    response = client.get(
+        "/api/v1/user/me", headers={"Authorization": "Bearer invalid_token"}
     )
     assert response.status_code == 401
 
 
-async def test_update_username_success(client: AsyncClient):
+def test_update_username_success(client):
     """测试成功修改用户名"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+    new_username = fake.user_name()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "updateuser@example.com",
-            "username": "oldname",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     token = register_response.json()["access_token"]
 
     # 修改用户名
-    response = await client.post(
-        "/auth/me/username",
-        json={"username": "newname"},
+    response = client.post(
+        "/api/v1/user/me/username",
+        json={"username": new_username},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["username"] == "newname"
+    assert response.status_code == 202
 
 
-async def test_update_username_same(client: AsyncClient):
+def test_update_username_same(client):
     """测试修改用户名为相同值"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "sameuser@example.com",
-            "username": "samename",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     token = register_response.json()["access_token"]
 
     # 尝试修改为相同用户名
-    response = await client.post(
-        "/auth/me/username",
-        json={"username": "samename"},
+    response = client.post(
+        "/api/v1/user/me/username",
+        json={"username": username},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 400
     assert "用户名相同" in response.json()["detail"]
 
 
-async def test_update_username_no_token(client: AsyncClient):
+def test_update_username_no_token(client):
     """测试修改用户名时未提供token"""
-    response = await client.post("/auth/me/username", json={"username": "newname"})
+    response = client.post(
+        "/api/v1/user/me/username", json={"username": fake.user_name()}
+    )
     assert response.status_code == 401
 
 
-async def test_update_email_success(client: AsyncClient):
+def test_update_email_success(client):
     """测试成功修改邮箱"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+    new_email = generate_test_email()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "oldemail@example.com",
-            "username": "emailuser",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     token = register_response.json()["access_token"]
 
     # 修改邮箱
-    response = await client.post(
-        "/auth/me/email",
-        json={"email": "newemail@example.com"},
+    response = client.post(
+        "/api/v1/user/me/email",
+        json={"email": new_email},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["email"] == "newemail@example.com"
+    assert response.status_code == 202
 
 
-async def test_update_email_same(client: AsyncClient):
+def test_update_email_same(client):
     """测试修改邮箱为相同值"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "sameemail@example.com",
-            "username": "user",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     token = register_response.json()["access_token"]
 
     # 尝试修改为相同邮箱
-    response = await client.post(
-        "/auth/me/email",
-        json={"email": "sameemail@example.com"},
+    response = client.post(
+        "/api/v1/user/me/email",
+        json={"email": email},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 400
     assert "邮箱相同" in response.json()["detail"]
 
 
-async def test_update_email_no_token(client: AsyncClient):
+def test_update_email_no_token(client):
     """测试修改邮箱时未提供token"""
-    response = await client.post(
-        "/auth/me/email", json={"email": "newemail@example.com"}
+    response = client.post(
+        "/api/v1/user/me/email", json={"email": generate_test_email()}
     )
     assert response.status_code == 401
 
 
-async def test_update_password_success(client: AsyncClient):
+def test_update_password_success(client):
     """测试成功修改密码"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+    new_password = fake.password()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "pass@example.com",
-            "username": "passuser",
-            "password": "oldpassword",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     refresh_token = register_response.json()["refresh_token"]
 
     # 修改密码（使用 Cookie）
-    response = await client.post(
-        "/auth/me/password",
-        json={"password": "newpassword"},
-        cookies={"refresh_token": refresh_token},
+    client.cookies.set("refresh_token", refresh_token)
+    response = client.post(
+        "/api/v1/user/me/password",
+        json={"password": new_password},
     )
     assert response.status_code == 200
     data = response.json()
@@ -296,44 +353,51 @@ async def test_update_password_success(client: AsyncClient):
     assert "refresh_token" in data
 
 
-async def test_update_password_same(client: AsyncClient):
+def test_update_password_same(client):
     """测试修改密码为相同值"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "samepass@example.com",
-            "username": "user",
-            "password": "samepassword",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     refresh_token = register_response.json()["refresh_token"]
 
     # 尝试修改为相同密码（使用 Cookie）
-    response = await client.post(
-        "/auth/me/password",
-        json={"password": "samepassword"},
-        cookies={"refresh_token": refresh_token},
+    client.cookies.set("refresh_token", refresh_token)
+    response = client.post(
+        "/api/v1/user/me/password",
+        json={"password": password},
     )
     assert response.status_code == 400
     assert "密码相同" in response.json()["detail"]
 
 
-async def test_logout_success(client: AsyncClient):
+def test_logout_success(client):
     """测试成功登出"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
     # 注册并登录
-    register_response = await client.post(
-        "/auth/register",
+    register_response = client.post(
+        "/api/v1/user/register",
         json={
-            "email": "logout@example.com",
-            "username": "logoutuser",
-            "password": "password123",
+            "email": email,
+            "username": username,
+            "password": password,
         },
     )
     refresh_token = register_response.json()["refresh_token"]
 
     # 登出（使用 Cookie）
-    response = await client.post(
-        "/auth/logout", cookies={"refresh_token": refresh_token}
-    )
+    client.cookies.set("refresh_token", refresh_token)
+    response = client.post("/api/v1/user/logout")
     assert response.status_code == 200

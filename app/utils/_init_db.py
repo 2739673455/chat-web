@@ -1,6 +1,7 @@
 """初始化数据库"""
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
@@ -110,28 +111,25 @@ class MyInit(DBInit):
             f.write(code)
 
 
-if __name__ == "__main__":
-    import logging
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
 
-    # 配置日志
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
-    logger = logging.getLogger(__name__)
-
-    # 数据库连接配置
-    my_init = MyInit(
-        {
-            "host": "127.0.0.1",
-            "port": 3306,
-            "user": "root",
-            "password": "123321",
-        },
-    )
-    sql_dir = Path(__file__).parent.parent / "sql"  # 数据库文件目录
-    sql_files = list(sql_dir.glob("*.sql"))  # 获取所有SQL文件
-    orm_dir = Path(__file__).parent.parent / "entities"  # 表模型输出目录
-    db_sql_orm = [(f.stem, f, orm_dir / f"{f.stem}.py") for f in sql_files]
-    asyncio.run(my_init.init_db(db_sql_orm))
+# 数据库连接配置
+my_init = MyInit(
+    {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "user": "root",
+        "password": "123321",
+    },
+)
+sql_dir = Path(__file__).parent.parent / "sql"  # 数据库文件目录
+sql_files = list(sql_dir.glob("*.sql"))  # 获取所有SQL文件
+orm_dir = Path(__file__).parent.parent / "entities"  # 表模型输出目录
+db_sql_orm = [(f.stem, f, orm_dir / f"{f.stem}.py") for f in sql_files]
+asyncio.run(my_init.init_db(db_sql_orm))

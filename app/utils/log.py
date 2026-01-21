@@ -15,6 +15,8 @@ LOG_FORMAT = (
 
 
 def _setup_logger(cfg, filter_func):
+    """配置日志输出"""
+    # 配置控制台输出
     if cfg.to_console:
         logger.add(
             sink=sys.stdout,
@@ -25,6 +27,7 @@ def _setup_logger(cfg, filter_func):
             filter=filter_func,
             enqueue=True,
         )
+    # 配置文件输出
     if cfg.to_file:
         (LOG_DIR / cfg.log_dir).mkdir(parents=True, exist_ok=True)
         logger.add(
@@ -39,14 +42,14 @@ def _setup_logger(cfg, filter_func):
         )
 
 
-logger_configured = False
+logger_configured = False  # 标记是否已配置
 
 
 def setup_logger():
     global logger_configured
     if logger_configured:
         return
-    logger.remove()
+    logger.remove()  # 移除默认的日志输出
     _setup_logger(CFG.log.app, lambda record: record["extra"].get("tag") is None)
     _setup_logger(CFG.log.auth, lambda record: record["extra"].get("tag") == "auth")
     logger_configured = True

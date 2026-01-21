@@ -1,6 +1,13 @@
 from pydantic import BaseModel, EmailStr, Field
 
 
+class TokenPayload(BaseModel):
+    sub: int
+    scope: list[str]
+    exp: float
+    jti: str
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr = Field(..., description="邮箱")
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
@@ -25,9 +32,9 @@ class UpdatePasswordRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    user_id: int
-    email: EmailStr
     username: str
+    email: str
+    groups: list[str]
 
 
 class LoginResponse(BaseModel):

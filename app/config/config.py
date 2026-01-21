@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import dotenv
 from omegaconf import OmegaConf
 from pydantic import BaseModel
+
+dotenv.load_dotenv(Path(__file__).parent.parent / ".env")
 
 CONFIG_DIR = Path(__file__).parent
 
@@ -34,15 +37,30 @@ class LogCfgs(BaseModel):
     auth: LogCfg
 
 
-class Cfg(BaseModel):
-    db: DBCfgs
-    log: LogCfgs
+class AuthCfg(BaseModel):
     secret_key: str
     algorithm: str
     access_token_expire_minutes: int
     refresh_token_expire_days: int
+
+
+class COSCfg(BaseModel):
+    bucket: str
+    secret_id: str
+    secret_key: str
+    region: str
+    token: str | None
+    scheme: str
+
+
+class Cfg(BaseModel):
+    db: DBCfgs
+    log: LogCfgs
+    auth: AuthCfg
+    cos: COSCfg
     encryption_key: str
     port: int
+    cors_origins: list[str]
 
 
 base_cfg = OmegaConf.load(CONFIG_DIR / "config.yml")  # 加载

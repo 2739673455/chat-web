@@ -1,26 +1,21 @@
 from datetime import datetime
+
 from pydantic import BaseModel, Field
-from typing import Optional
 
 
 class CreateConversationRequest(BaseModel):
-    title: Optional[str] = Field(None, description="对话标题")
+    model_config_id: int = Field(..., description="模型配置ID")
+
+
+class DeleteConversationRequest(BaseModel):
+    ids: list[int] = Field(..., description="对话ID列表")
 
 
 class ConversationResponse(BaseModel):
-    id: int
-    title: str
-    created_at: datetime
-
-
-class ConversationItem(BaseModel):
-    id: int
-    title: str
-    created_at: datetime
-    updated_at: datetime
-    message_count: int
+    conversation_id: int
+    title: str | None
+    update_at: datetime
 
 
 class ConversationListResponse(BaseModel):
-    conversations: list[ConversationItem]
-    total: int
+    conversations: list[ConversationResponse]
