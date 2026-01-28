@@ -8,3 +8,11 @@ POST {{api_url}}/user/register
     "username": "user_01",
     "password": "password"
 }
+
+### 登录
+POST {{api_url}}/user/login
+
+{
+    "email": "atguigu@atguigu.com",
+    "password": "123321"
+}

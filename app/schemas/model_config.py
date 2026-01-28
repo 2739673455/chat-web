@@ -37,6 +37,7 @@ class ModelConfigResponse(BaseModel):
     base_url: str
     model_name: str | None
     api_key: str | None
+    params: dict | None
 
 
 class ModelConfigListResponse(BaseModel):

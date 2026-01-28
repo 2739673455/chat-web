@@ -1,7 +1,8 @@
 import asyncio
+import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,16 +14,16 @@ from app.schemas.chat import (
     MessageItem,
     MessageListResponse,
     SendMessageRequest,
+    WebSocketChatRequest,
 )
 from app.schemas.user import AccessTokenPayload
 from app.services.chat import (
     get_messages,
-    image_url_to_cos_url,
     image_url_to_get_presigned_url,
-    save_message_in_db,
+    stream_response,
 )
-from app.utils.call_model import stream_model
 from app.utils.cos import generate_image_cos_key, get_upload_presigned_url
+from app.utils.log import app_logger
 
 router = APIRouter(prefix="/chat", tags=["聊天功能"])
 
@@ -33,6 +34,9 @@ async def api_get_upload_presigned_url(
     payload: Annotated[AccessTokenPayload, Depends(authenticate_access_token)],
 ):
     """获取带预签名的上传url"""
+    app_logger.info(
+        f"User get upload presigned url: conversation_id={request.conversation_id}"
+    )
     cos_keys = [
         generate_image_cos_key(payload.sub, request.conversation_id, suffix)
         for suffix in request.suffixes
@@ -46,11 +50,12 @@ async def api_get_upload_presigned_url(
 @router.get("/{conversation_id}", response_model=MessageListResponse)
 async def api_get_messages(
     conversation_id: int,
-    session: Annotated[AsyncSession, Depends(get_app_db)],
+    db_session: Annotated[AsyncSession, Depends(get_app_db)],
     payload: Annotated[AccessTokenPayload, Depends(authenticate_access_token)],
 ):
     """获取消息记录"""
-    messages = await get_messages(session, conversation_id)
+    app_logger.info(f"User get messages: {conversation_id=}")
+    messages = await get_messages(db_session, conversation_id)
     # 转换cos_url为预签名下载url
     await image_url_to_get_presigned_url(messages)
     return MessageListResponse(
@@ -69,41 +74,63 @@ async def api_get_messages(
 @router.post("/send")
 async def api_send_message(
     request: SendMessageRequest,
-    session: Annotated[AsyncSession, Depends(get_app_db)],
+    db_session: Annotated[AsyncSession, Depends(get_app_db)],
     payload: Annotated[AccessTokenPayload, Depends(authenticate_access_token)],
 ):
     """发送消息,获取AI流式回复"""
-    # 转换图片url为cos_url
-    await image_url_to_cos_url(request.messages)
-    # 用户消息存入数据库
-    user_message = await save_message_in_db(
-        session, request.messages[-1], payload.sub, request.conversation_id
-    )
-    # 转换cos_url为预签名下载url
-    await image_url_to_get_presigned_url(request.messages)
-
-    async def generate_response():
-        chunks: list[str] = []
-        async for chunk in stream_model(
-            request.messages,
-            request.base_url,
-            request.model_name,
-            request.encrypted_api_key,
-            request.params,
-        ):
-            chunks.append(chunk)
-            yield chunk
-        # AI回复存入数据库
-        ai_message = await save_message_in_db(
-            session,
-            MessageItem(role="assistant", content="".join(chunks)),
-            payload.sub,
-            request.conversation_id,
-        )
-        # 最后发送消息ID
-        yield f'\n\n[END]{{"user_message_id":{user_message.id},"ai_message_id":{ai_message.id}}}'
-
+    app_logger.info(f"User send message: conversation_id={request.conversation_id}")
     return StreamingResponse(
-        generate_response(),
+        stream_response(
+            conversation_id=request.conversation_id,
+            user_id=payload.sub,
+            messages=request.messages,
+            base_url=request.base_url,
+            model_name=request.model_name,
+            api_key=request.api_key,
+            params=request.params,
+            db_session=db_session,
+        ),
         media_type="text/plain",
     )
+
+
+@router.websocket("/ws/chat")
+async def api_websocket_chat(
+    websocket: WebSocket,
+    conversation_id: int,
+    db_session: Annotated[AsyncSession, Depends(get_app_db)],
+    payload: Annotated[AccessTokenPayload, Depends(authenticate_access_token)],
+):
+    """WebSocket 聊天接口"""
+    await websocket.accept()
+    try:
+        while True:
+            try:
+                data = await websocket.receive_json()
+                app_logger.info(f"User websocket chat: {conversation_id=}")
+                request = WebSocketChatRequest(**data)
+            except json.JSONDecodeError:
+                await websocket.send_json(
+                    {"type": "error", "content": "Invalid JSON format"}
+                )
+                continue
+            except Exception as e:
+                await websocket.send_json(
+                    {"type": "error", "content": f"Invalid request format: {str(e)}"}
+                )
+                continue
+
+            if request.type == "chat":
+                async for i in stream_response(
+                    conversation_id,
+                    payload.sub,
+                    request.messages,
+                    request.base_url,
+                    request.model_name,
+                    request.api_key,
+                    request.params,
+                    db_session,
+                ):
+                    await websocket.send_json(json.loads(i))
+    except WebSocketDisconnect:  # 客户端断开连接
+        pass

@@ -17,7 +17,3 @@ def decrypt(ciphertext: str | None) -> str | None:
     if not ciphertext:
         return ciphertext
     return _fernet.decrypt(ciphertext.encode()).decode()
-
-
-if __name__ == "__main__":
-    print(encrypt("sk-fff58ca453e4a4b01ef922a5e83a5d9a"))

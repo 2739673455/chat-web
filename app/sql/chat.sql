@@ -45,19 +45,3 @@ CREATE TABLE `message` (
     FOREIGN KEY (`conversation_id`) REFERENCES `conversation` (`id`) ON DELETE CASCADE,
     INDEX idx_message_conversation_id (`conversation_id`)
 ) COMMENT '消息';
-
-INSERT INTO
-    `model_config` (
-        `name`,
-        `user_id`,
-        `base_url`,
-        `model_name`,
-        `encrypted_api_key`
-    )
-VALUES (
-        'test',
-        1,
-        'https://apis.iflow.cn/v1',
-        'qwen3-max',
-        'gAAAAABpbttg9o-mO0_Xms-DOdSGGQYSO5WEcddw5XPPTagdbkUEumC3WxZV_TspF_pJWUflq26LvIMt-OJzBigj5miyqNxN5Dkpt-3EPW49dEICzTksYsttLqOphoIACoX6Vv2_XX_c'
-    );

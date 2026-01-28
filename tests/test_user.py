@@ -153,7 +153,7 @@ def test_login_invalid_password(client):
         json={"email": email, "password": password + "1"},
     )
     assert response.status_code == 401
-    assert "邮箱或密码错误" in response.json()["detail"]
+    assert "密码错误" in response.json()["detail"]
 
 
 def test_get_me_success(client):
@@ -401,3 +401,43 @@ def test_logout_success(client):
     client.cookies.set("refresh_token", refresh_token)
     response = client.post("/api/v1/user/logout")
     assert response.status_code == 200
+
+
+def test_refresh_token_success(client):
+    """测试成功刷新令牌"""
+    email = generate_test_email()
+    username = fake.user_name()
+    password = fake.password()
+
+    # 注册并登录
+    register_response = client.post(
+        "/api/v1/user/register",
+        json={
+            "email": email,
+            "username": username,
+            "password": password,
+        },
+    )
+    refresh_token_val = register_response.json()["refresh_token"]
+
+    # 使用 refresh_token 获取新令牌（使用 Cookie）
+    client.cookies.set("refresh_token", refresh_token_val)
+    response = client.post("/api/v1/user/refresh")
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert data["token_type"] == "bearer"
+
+
+def test_refresh_token_no_token(client):
+    """测试刷新令牌时未提供token"""
+    response = client.post("/api/v1/user/refresh")
+    assert response.status_code == 401
+
+
+def test_refresh_token_invalid_token(client):
+    """测试刷新令牌时使用无效token"""
+    client.cookies.set("refresh_token", "invalid_refresh_token")
+    response = client.post("/api/v1/user/refresh")
+    assert response.status_code == 401

@@ -4,14 +4,16 @@ from typing import Callable
 
 from fastapi import Request, Response
 
-from app.utils.log import (
-    app_logger,
+from app.utils.context import (
     client_ip_ctx,
     method_ctx,
     path_ctx,
     request_id_ctx,
+    response_time_ms_ctx,
+    status_ctx,
     trace_id_ctx,
 )
+from app.utils.log import app_logger
 
 
 def _get_client_ip(request: Request) -> str:
@@ -38,21 +40,23 @@ async def log_middleware(request: Request, call_next: Callable) -> Response:
     start_time = time.time()
     error = None
     try:
-        app_logger.info("Request incoming")
+        status_ctx.set("start")  # 设置 status 到 ContextVar
+        app_logger.debug("Request incoming")
+        status_ctx.set("processing")  # 设置 status 到 ContextVar
         response = await call_next(request)  # 执行请求
     except Exception as e:
         error = str(e)
         raise
     finally:
-        response_time = (time.time() - start_time) * 1000
+        response_time_ms_ctx.set(
+            round((time.time() - start_time) * 1000, 2)
+        )  # 设置 response_time_ms 到 ContextVar
         if error:
-            app_logger.bind(response_time_ms=round(response_time, 2), status="failed").error(
-                f"Request failed - {error}"
-            )
+            status_ctx.set("fail")  # 设置 status 到 ContextVar
+            app_logger.debug(f"Request failed - {error}")
         else:
-            app_logger.bind(response_time_ms=round(response_time, 2), status="success").info(
-                "Request completed"
-            )
+            status_ctx.set("finish")  # 设置 status 到 ContextVar
+            app_logger.debug("Request completed")
 
     # 添加请求ID和追踪ID到响应头
     response.headers["X-Request-ID"] = request_id

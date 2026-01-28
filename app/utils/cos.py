@@ -18,6 +18,20 @@ client = CosS3Client(config)
 if not (client.bucket_exists(CFG.cos.bucket)):
     client.create_bucket(CFG.cos.bucket)
 
+    # 配置 CORS 规则
+    cors_config = {
+        "CORSRule": [
+            {
+                "AllowedOrigin": ["*"],
+                "AllowedMethod": ["PUT", "GET", "POST", "DELETE", "HEAD"],
+                "AllowedHeader": ["*"],
+                "ExposeHeader": ["ETag", "Content-Length", "Content-Type"],
+                "MaxAgeSeconds": 600,
+            }
+        ]
+    }
+    client.put_bucket_cors(Bucket=CFG.cos.bucket, CORSConfiguration=cors_config)
+
 
 def extract_cos_key(url: str) -> str:
     """

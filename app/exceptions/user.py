@@ -10,7 +10,7 @@ class EmailAlreadyExistsError(UserError):
 
 
 class InvalidCredentialsError(UserError):
-    def __init__(self, message: str = "邮箱或密码错误"):
+    def __init__(self, message: str = "密码错误"):
         super().__init__(message)
 
 

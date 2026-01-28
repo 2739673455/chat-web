@@ -42,11 +42,11 @@ class DatabaseManager:
 
         async def _get_db() -> AsyncGenerator[AsyncSession, None]:
             session_maker = self.get_session_maker(name)
-            async with session_maker() as session:
+            async with session_maker() as db_session:
                 try:
-                    yield session
+                    yield db_session
                 finally:
-                    await session.close()
+                    await db_session.close()
 
         return _get_db
 

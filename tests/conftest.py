@@ -1,9 +1,20 @@
 import pytest
+from faker import Faker
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from app.config.config import CFG
 from app.main import app
+
+fake = Faker("zh_CN")
+
+# 测试专用的模型配置
+TEST_MODEL_CONFIG = {
+    "name": "Test Model Config",
+    "base_url": "https://apis.iflow.cn/v1",
+    "model_name": "qwen3-vl-plus",
+    "api_key": "sk-fff58ca453e4a4b01ef922a5e83a5d9a",
+}
 
 
 @pytest.fixture(scope="session")
@@ -64,3 +75,58 @@ def cleanup_test_users():
             )
             conn.commit()
         app_engine.dispose()
+
+
+def generate_test_email():
+    """生成以 test_ 开头的测试用户邮箱"""
+    return f"test_{fake.email()}"
+
+
+def get_token(client):
+    """辅助函数：注册用户并返回 access_token"""
+    register_response = client.post(
+        "/api/v1/user/register",
+        json={
+            "email": generate_test_email(),
+            "username": fake.user_name(),
+            "password": fake.password(),
+        },
+    )
+    return register_response.json()["access_token"]
+
+
+def create_model_config(
+    client, token, name=None, base_url=None, model_name=None, api_key=None
+):
+    """辅助函数：创建模型配置并返回配置ID"""
+    response = client.post(
+        "/api/v1/model_config/create",
+        json={
+            "name": name or fake.word(),
+            "base_url": base_url or fake.url(),
+            "model_name": model_name or fake.word(),
+            "api_key": api_key or fake.password(),
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return response.json()["config_id"]
+
+
+def create_conversation(client, token, model_config_id):
+    """辅助函数：创建对话并返回对话ID"""
+    response = client.post(
+        "/api/v1/conversation/create",
+        json={"model_config_id": model_config_id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return response.json()["conversation_id"]
+
+
+def create_test_model_config(client, token):
+    """辅助函数：创建测试专用的模型配置并返回配置ID"""
+    response = client.post(
+        "/api/v1/model_config/create",
+        json=TEST_MODEL_CONFIG,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return response.json()["config_id"]

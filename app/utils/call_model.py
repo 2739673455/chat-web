@@ -3,8 +3,6 @@ from typing import Any
 import httpx
 from openai import AsyncOpenAI
 
-from .crypto import decrypt
-
 # 全局共享的 httpx 连接池
 _http_client: httpx.AsyncClient | None = None
 
@@ -31,7 +29,7 @@ async def call_model(
     messages,
     base_url: str,
     model_name: str | None,
-    encrypted_api_key: str | None,
+    api_key: str | None,
     params: dict[str, Any] | None,
 ):
     """非流式调用模型"""
@@ -40,7 +38,7 @@ async def call_model(
 
     client = AsyncOpenAI(
         base_url=base_url,
-        api_key=decrypt(encrypted_api_key),
+        api_key=api_key,
         http_client=get_http_client(),
     )
 
@@ -57,7 +55,7 @@ async def stream_model(
     messages,
     base_url: str,
     model_name: str | None,
-    encrypted_api_key: str | None,
+    api_key: str | None,
     params: dict[str, Any] | None,
 ):
     """流式调用模型"""
@@ -66,7 +64,7 @@ async def stream_model(
 
     client = AsyncOpenAI(
         base_url=base_url,
-        api_key=decrypt(encrypted_api_key),
+        api_key=api_key,
         http_client=get_http_client(),
     )
 
@@ -80,32 +78,3 @@ async def stream_model(
     async for chunk in stream:
         if chunk.choices and chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    from .crypto import encrypt
-
-    async def main():
-        async for chunk in stream_model(
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "描述图片"},
-                        {
-                            "type": "image_url",
-                            "image_url": "https://img1.baidu.com/it/u=1880815418,2633345871&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=988",
-                        },
-                    ],
-                }
-            ],
-            "https://apis.iflow.cn/v1",
-            "qwen3-vl-plus",
-            encrypt("sk-fff58ca453e4a4b01ef922a5e83a5d9a"),
-            None,
-        ):
-            print(chunk, end="", flush=True)
-
-    asyncio.run(main())

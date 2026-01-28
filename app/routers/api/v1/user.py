@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import (
@@ -19,16 +19,21 @@ from app.schemas.user import (
     UpdateUsernameRequest,
     UserResponse,
 )
-from app.services.auth import create_access_token
+from app.services.auth import (
+    create_token,
+    refresh_token,
+    revoke_all_refresh_tokens,
+    revoke_refresh_token,
+)
 from app.services.user import (
     get_user,
-    login,
-    logout,
     register,
     update_email,
     update_password,
     update_username,
 )
+from app.utils.context import user_id_ctx
+from app.utils.log import auth_logger
 
 router = APIRouter(prefix="/user", tags=["用户管理"])
 
@@ -36,31 +41,65 @@ router = APIRouter(prefix="/user", tags=["用户管理"])
 @router.post("/register", response_model=LoginResponse)
 async def api_register(
     request: RegisterRequest,
-    session: Annotated[AsyncSession, Depends(get_auth_db)],
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
+    response: Response,
 ) -> LoginResponse:
     """注册新用户"""
-    await register(session, request.email, request.username, request.password)
-    tokens = await login(session, request.email, request.password)
-    return LoginResponse(**tokens)
+    await register(db_session, request.email, request.username, request.password)
+    result = await create_token(db_session, request.email, request.password)
+    user_id_ctx.set(str(result["user_id"]))  # 设置 user_id 到 ContextVar
+    auth_logger.info("User register")
+    # 设置 refresh_token cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=result["refresh_token"],
+        httponly=True,  # 防止 JavaScript 访问 cookie
+        secure=False,
+        samesite="lax",
+    )
+    return LoginResponse(**result)
 
 
 @router.post("/login", response_model=LoginResponse)
 async def api_login(
     request: LoginRequest,
-    session: Annotated[AsyncSession, Depends(get_auth_db)],
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
+    response: Response,
 ) -> LoginResponse:
     """用户登录"""
-    tokens = await login(session, request.email, request.password)
+    result = await create_token(db_session, request.email, request.password)
+    user_id_ctx.set(str(result["user_id"]))  # 设置 user_id 到 ContextVar
+    auth_logger.info("User login")
+    # 设置 refresh_token cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=result["refresh_token"],
+        httponly=True,  # 防止 JavaScript 访问 cookie
+        secure=False,
+        samesite="lax",
+    )
+    return LoginResponse(**result)
+
+
+@router.post("/refresh", response_model=LoginResponse)
+async def api_refresh(
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
+    payload: Annotated[RefreshTokenPayload, Depends(authenticate_refresh_token)],
+) -> LoginResponse:
+    """刷新令牌"""
+    auth_logger.info("User refresh token")
+    tokens = await refresh_token(db_session, payload, [])
     return LoginResponse(**tokens)
 
 
 @router.get("/me", response_model=UserResponse)
 async def api_me(
-    session: Annotated[AsyncSession, Depends(get_auth_db)],
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
     payload: Annotated[AccessTokenPayload, Depends(authenticate_access_token)],
 ) -> UserResponse:
     """获取当前用户信息"""
-    user = await get_user(session, payload.sub)
+    auth_logger.info("User get user info")
+    user = await get_user(db_session, payload.sub)
     groups = [g.name for g in user.group]
     return UserResponse(username=user.name, email=user.email, groups=groups)
 
@@ -68,39 +107,65 @@ async def api_me(
 @router.post("/me/username", status_code=status.HTTP_202_ACCEPTED)
 async def api_update_username(
     request: UpdateUsernameRequest,
-    session: Annotated[AsyncSession, Depends(get_auth_db)],
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
     payload: Annotated[AccessTokenPayload, Depends(authenticate_access_token)],
 ):
     """修改用户名"""
-    await update_username(session, payload.sub, request.username)
+    auth_logger.info("User update username")
+    await update_username(db_session, payload.sub, request.username)
 
 
 @router.post("/me/email", status_code=status.HTTP_202_ACCEPTED)
 async def api_update_email(
     request: UpdateEmailRequest,
-    session: Annotated[AsyncSession, Depends(get_auth_db)],
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
     payload: Annotated[AccessTokenPayload, Depends(authenticate_access_token)],
 ):
     """修改邮箱"""
-    await update_email(session, payload.sub, request.email)
+    auth_logger.info("User update email")
+    await update_email(db_session, payload.sub, request.email)
 
 
 @router.post("/me/password", response_model=LoginResponse)
 async def api_update_password(
     request: UpdatePasswordRequest,
-    session: Annotated[AsyncSession, Depends(get_auth_db)],
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
     payload: Annotated[RefreshTokenPayload, Depends(authenticate_refresh_token)],
+    response: Response,
 ) -> LoginResponse:
     """修改密码"""
-    await update_password(session, payload.sub, request.password)
-    tokens = await create_access_token(session, payload, [])
+    auth_logger.info("User update password")
+    user_id = payload.sub
+
+    # 验证并修改密码
+    await update_password(db_session, user_id, request.password)
+
+    # 撤销该用户的所有历史刷新令牌
+    await revoke_all_refresh_tokens(db_session, user_id)
+
+    auth_logger.info(f"User {user_id} password updated, all refresh tokens revoked")
+
+    # 生成新的访问令牌和刷新令牌
+    tokens = await refresh_token(db_session, payload, [])
+
+    # 设置新的 refresh_token cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,  # 7天
+    )
+
     return LoginResponse(**tokens)
 
 
 @router.post("/logout")
 async def api_logout(
-    session: Annotated[AsyncSession, Depends(get_auth_db)],
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
     payload: Annotated[RefreshTokenPayload, Depends(authenticate_refresh_token)],
 ):
     """用户登出"""
-    await logout(session, payload)
+    auth_logger.info("User logout")
+    await revoke_refresh_token(db_session, payload.jti, payload.sub)

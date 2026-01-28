@@ -28,8 +28,8 @@ app.middleware("http")(log_middleware)
 # CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CFG.cors_origins,  # 允许的来源列表
-    allow_credentials=True,  # 允许携带cookie
+    allow_origins=CFG.cors_origins,  # 允许的源列表
+    allow_credentials=True,  # 允许 Authorization headers, Cookies
     allow_methods=["*"],  # 允许的HTTP方法列表
     allow_headers=["*"],  # 允许的请求头列表
 )
@@ -50,6 +50,6 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=CFG.port,
-        reload=True,
-        reload_dirs=[os.path.dirname(__file__)],
+        # reload=True,
+        # reload_dirs=[os.path.dirname(__file__)],
     )

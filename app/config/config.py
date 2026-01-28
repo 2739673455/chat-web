@@ -25,8 +25,9 @@ class DBCfgs(BaseModel):
 
 # 日志
 class LogCfg(BaseModel):
-    level: str
+    to_console_level: str
     to_console: bool
+    to_file_level: str
     to_file: bool
     log_dir: str
     max_file_size: str

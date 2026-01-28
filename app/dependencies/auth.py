@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt
-from fastapi import Cookie, Depends
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, SecurityScopes
+from fastapi import Cookie, Depends, Header
+from fastapi.security import SecurityScopes
 from pwdlib._hash import PasswordHash
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -19,6 +19,7 @@ from app.exceptions.auth import (
     InvalidRefreshTokenError,
 )
 from app.schemas.user import AccessTokenPayload, RefreshTokenPayload
+from app.utils.context import user_id_ctx
 
 from .database import get_auth_db
 
@@ -27,7 +28,16 @@ HASHED_DUMMY_PASSWORD = password_hash.hash("dummy_password")
 BEIJING_TZ = timezone(timedelta(hours=8))  # 北京时间时区（UTC+8）
 
 
-def _authenticate_access_token(token: str) -> AccessTokenPayload:
+def _get_access_token(
+    authorization: Annotated[str | None, Header()] = None,  # 从请求头获取 Bearer token
+) -> str | None:
+    """从请求头获取 Bearer token"""
+    if authorization is None:
+        raise InvalidAccessTokenError
+    return authorization.replace("Bearer ", "")
+
+
+def _verify_access_token(token: str) -> AccessTokenPayload:
     """验证访问令牌"""
     try:
         payload = jwt.decode(token, CFG.auth.secret_key, [CFG.auth.algorithm])
@@ -40,7 +50,7 @@ def _authenticate_access_token(token: str) -> AccessTokenPayload:
         raise InvalidAccessTokenError  # 访问令牌无效
 
 
-def _authenticate_refresh_token(token: str) -> RefreshTokenPayload:
+def _verify_refresh_token(token: str) -> RefreshTokenPayload:
     """验证刷新令牌"""
     try:
         payload = jwt.decode(token, CFG.auth.secret_key, [CFG.auth.algorithm])
@@ -54,13 +64,13 @@ def _authenticate_refresh_token(token: str) -> RefreshTokenPayload:
 
 
 async def _validate_refresh_token_in_db(
-    session: AsyncSession, jti: str, user_id: int
+    db_session: AsyncSession, jti: str, user_id: int
 ) -> None:
     """在数据库中验证刷新令牌"""
     stmt = select(RefreshToken.yn, RefreshToken.expires_at).where(
         RefreshToken.jti == jti, RefreshToken.user_id == user_id
     )
-    result = await session.execute(stmt)
+    result = await db_session.execute(stmt)
     token_record = result.first()
 
     if not token_record:  # 刷新令牌不存在
@@ -78,32 +88,35 @@ async def _validate_refresh_token_in_db(
 
 async def authenticate_refresh_token(
     refresh_token: Annotated[str, Cookie()],  # 从 Cookie 获取 refresh_token
-    session: AsyncSession = Depends(get_auth_db),
+    db_session: Annotated[AsyncSession, Depends(get_auth_db)],
 ) -> RefreshTokenPayload:
     """验证刷新令牌"""
     # 解析刷新令牌
-    payload = _authenticate_refresh_token(refresh_token)
+    payload = _verify_refresh_token(refresh_token)
     jti, user_id = payload.jti, payload.sub
 
+    # 设置 user_id 到 ContextVar
+    user_id_ctx.set(str(user_id))
+
     # 验证刷新令牌是否在数据库中且未被撤销
-    await _validate_refresh_token_in_db(session, jti, user_id)
+    await _validate_refresh_token_in_db(db_session, jti, user_id)
 
     return payload
 
 
 async def authenticate_access_token(
+    access_token: Annotated[str, Depends(_get_access_token)],
     security_scopes: SecurityScopes,
-    credentials: Annotated[
-        HTTPAuthorizationCredentials, Depends(HTTPBearer())
-    ],  # 从请求头获取 Authorization: Bearer
 ) -> AccessTokenPayload:
     """验证访问令牌"""
-    # 解析访问令牌
-    access_token = credentials.credentials
-    payload = _authenticate_access_token(access_token)
+    payload = _verify_access_token(access_token)
+    user_id, scopes = payload.sub, payload.scope
+
+    # 设置 user_id 到 ContextVar
+    user_id_ctx.set(str(user_id))
 
     # 验证权限范围
-    if set(security_scopes.scopes) - set(payload.scope):
+    if set(security_scopes.scopes) - set(scopes):
         raise InsufficientPermissionsError  # 越权
 
     return payload

@@ -5,12 +5,12 @@ class AuthenticationError(Exception): ...
 
 
 class ExpiredRefreshTokenError(AuthenticationError):
-    def __init__(self, message: str = "刷新令牌令牌过期"):
+    def __init__(self, message: str = "刷新令牌过期"):
         super().__init__(message)
 
 
 class ExpiredAccessTokenError(AuthenticationError):
-    def __init__(self, message: str = "访问令牌令牌过期"):
+    def __init__(self, message: str = "访问令牌过期"):
         super().__init__(message)
 
 
