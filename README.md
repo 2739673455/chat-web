@@ -1,9 +1,9 @@
 # 启动服务
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-# 修改 volumes/backend/configs中的配置文件
+# 修改 `volumes/backend/configs` 中的配置文件
 `config.yml`:
 ```yaml
 db: # 数据库
@@ -44,8 +44,8 @@ COS_SECRET_KEY= <--- 添加
 
 # 重启特定服务
 ```bash
-docker-compose restart backend
-docker-compose restart frontend
+docker compose restart backend
+docker compose restart frontend
 ```
 
 # 访问应用
@@ -54,10 +54,10 @@ docker-compose restart frontend
 
 # 停止服务
 ```bash
-docker-compose down
+docker compose down
 ```
 
 # 重新构建并启动
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
